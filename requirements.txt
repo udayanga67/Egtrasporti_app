@@ -1,5 +1,9 @@
 streamlit
 pandas
+fpdf
+streamlit-lottie
+requests
 pydrive2
+google-auth
 google-auth-oauthlib
-weasyprint
+google-auth-httplib2
