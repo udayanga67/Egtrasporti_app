@@ -5,6 +5,7 @@ import hashlib
 import os
 import json
 import calendar
+import gspread
 from datetime import datetime, date
 from fpdf import FPDF
 
@@ -19,6 +20,7 @@ from google.oauth2 import service_account
 
 # Sostituisci con l'ID della tua cartella Google Drive
 ID_CARTELLA_DRIVE = "10A1flQZ5GkwukRSxSvLMl6vPYwJmXW4K" 
+ID_FOGLIO_PRESENZE = "1wUBaTESXuKJRIFPDqvPWMgjXLBVcwnlLpEtXrylNfM8"
 
 def inizializza_drive():
     # 1. Prova a leggere dalla variabile d'ambiente di Google Cloud
@@ -42,7 +44,33 @@ def inizializza_drive():
             # Se manca tutto, prova l'autenticazione standard
             gauth.LocalWebserverAuth()
         return GoogleDrive(gauth)
-
+def inizializza_foglio():
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    if creds_json:
+        info = json.loads(creds_json)
+        creds = service_account.Credentials.from_service_account_info(
+            info, 
+            scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        )
+    else:
+        creds = service_account.Credentials.from_service_account_file(
+            'credentials.json', 
+            scopes=['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
+        )
+    
+    client = gspread.authorize(creds)
+    return client.open_by_key(ID_FOGLIO_PRESENZE).sheet1
+def salva_presenza_su_google(nome_dipendente, data, stato):
+    try:
+        foglio = inizializza_foglio()
+        foglio.append_row([
+            nome_dipendente, 
+            str(data), 
+            stato, 
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        ])
+    except Exception as e:
+        st.error(f"Errore nel salvataggio su Google Sheets: {e}")    
 def salva_su_drive(percorso_file_locale, nome_file):
     drive = inizializza_drive()
     file_drive = drive.CreateFile({
@@ -573,21 +601,20 @@ if st.session_state['ruolo_corrente'] == "Dirigente":
 
         # 5. Pulsante di salvataggio
         if st.button("💾 Salva Tutte le Modifiche", type="primary", use_container_width=True):
-            punti_salvati = 0
             for index, row in df_editato.iterrows():
                 data_corrente = row["Data_Raw"]
                 for user, nome, cognome in dipendenti:
                     col_label = f"{nome} {cognome}"
                     nuovo_valore_raw = row[col_label]
                     
-                    # Mappatura inversa per il database
+                    # Mappatura per il database
                     stato_db = "Non registrato"
                     if "Presente" in nuovo_valore_raw: stato_db = "Presente"
                     elif "Assente" in nuovo_valore_raw: stato_db = "Assente"
                     elif "No Lavoro" in nuovo_valore_raw: stato_db = "No Lavoro"
 
                     if stato_db != "Non registrato":
-                        # UPDATE o INSERT
+                        # 1. SALVATAGGIO SU SQLITE (Locale/Temporaneo)
                         cur.execute("SELECT id FROM presenze WHERE username=? AND data=?", (user, data_corrente))
                         esiste = cur.fetchone()
                         if esiste:
@@ -595,15 +622,15 @@ if st.session_state['ruolo_corrente'] == "Dirigente":
                         else:
                             cur.execute("INSERT INTO presenze (username, data, stato, dettagli) VALUES (?,?,?,?)",
                                         (user, data_corrente, stato_db, ""))
-                    else:
-                        # Se l'utente mette "Non reg.", cancelliamo il record per pulizia
-                        cur.execute("DELETE FROM presenze WHERE username=? AND data=?", (user, data_corrente))
+                        
+                        # 2. SALVATAGGIO SU GOOGLE SHEETS (Permanente)
+                        # Questa è la riga che abbiamo aggiunto:
+                        salva_presenza_su_google(col_label, data_corrente, stato_db)
                     
             conn.commit()
-            st.success("Tabella aggiornata con successo!")
+            st.success("Dati salvati sia nel database che su Google Sheets!")
             time.sleep(1)
             st.rerun()
-
         # --- 5. FATTURAZIONE (VERSIONE CORRETTA E OTTIMIZZATA) ---
     elif menu == "Fatturazione":
             st.title("🚛 Generatore Fatture Logistica")
