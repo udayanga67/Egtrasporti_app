@@ -62,12 +62,14 @@ def inizializza_foglio():
     return client.open_by_key(ID_FOGLIO_PRESENZE).sheet1
 def salva_presenza_su_google(nome_dipendente, data, stato):
     try:
+        salva_presenza_su_google(col_label, data_corrente, stato_db)
         foglio = inizializza_foglio()
         foglio.append_row([
             nome_dipendente, 
             str(data), 
             stato, 
             datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                  
         ])
     except Exception as e:
         st.error(f"Errore nel salvataggio su Google Sheets: {e}")    
