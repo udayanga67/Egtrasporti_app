@@ -3,6 +3,7 @@ import sqlite3
 import pandas as pd
 import hashlib
 import os
+import json
 import calendar
 from datetime import datetime, date
 from fpdf import FPDF
@@ -20,12 +21,27 @@ from google.oauth2 import service_account
 ID_CARTELLA_DRIVE = "10A1flQZ5GkwukRSxSvLMl6vPYwJmXW4K" 
 
 def inizializza_drive():
-    # Carica le credenziali (per ora dal file locale, poi lo faremo via ambiente)
-    gauth = GoogleAuth()
-    scope = ['https://www.googleapis.com/auth/drive']
-    gauth.credentials = service_account.Credentials.from_service_account_file(
-        'credentials.json', scopes=scope)
-    return GoogleDrive(gauth)
+    # 1. Prova a leggere dalla variabile d'ambiente di Google Cloud
+    creds_json = os.environ.get("GOOGLE_CREDENTIALS_JSON")
+    
+    if creds_json:
+        # Siamo online su Cloud Run: usiamo la variabile che hai incollato prima
+        info = json.loads(creds_json)
+        creds = service_account.Credentials.from_service_account_info(info)
+        gauth = GoogleAuth()
+        gauth.credentials = creds
+        return GoogleDrive(gauth)
+    else:
+        # Siamo sul tuo PC: usiamo il file credentials.json come facevi prima
+        scope = ['https://www.googleapis.com/auth/drive']
+        gauth = GoogleAuth()
+        if os.path.exists('credentials.json'):
+            gauth.credentials = service_account.Credentials.from_service_account_file(
+                'credentials.json', scopes=scope)
+        else:
+            # Se manca tutto, prova l'autenticazione standard
+            gauth.LocalWebserverAuth()
+        return GoogleDrive(gauth)
 
 def salva_su_drive(percorso_file_locale, nome_file):
     drive = inizializza_drive()
